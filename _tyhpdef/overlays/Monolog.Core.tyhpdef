@@ -3,7 +3,8 @@
  * LAYER 3 (hand overlay) — Tyhp-authored. Never regenerated.
  * Path: _tyhpdef/overlays/*.tyhpdef  (not under overlays/stubs/)
  * Narrow Layer 1 harvest for Logger, LogRecord, Level, Utils, and ErrorHandler:
- * level unions, context/extra shapes, processor callables, and class-string helpers.
+ * level unions, context/extra shapes, processor callables, class-string helpers,
+ * and 3.12 clock / stack-trace / Utils additions.
  */
 
 namespace Monolog {
@@ -37,6 +38,12 @@ namespace Monolog {
          */
         // @overlay-against: function registerFatalHandler(mixed $level, int $reservedMemorySize): self
         public function registerFatalHandler(\Psr\Log\LogLevelString|null $level = null, int $reservedMemorySize = 20): self;
+
+        /**
+         * Overlay: restore the harvest-missing `$errorTypes = \E_ALL` default.
+         */
+        // @overlay-against: function captureStackTraces(bool $capture, int $errorTypes): self
+        public function captureStackTraces(bool $capture = true, int $errorTypes = \E_ALL): self;
 
         /**
          * @return array<\__ClassName, \Psr\Log\LogLevelString>
@@ -76,7 +83,7 @@ namespace Monolog {
     }
 
     /**
-     * Overlay: processor callables, context maps, `log()` level, exception handler.
+     * Overlay: processor callables, context maps, `log()` level, exception handler, clock ctor.
      */
     // @overlay-against: class Logger implements \Psr\Log\LoggerInterface, \Monolog\ResettableInterface
     partial class Logger {
@@ -94,9 +101,10 @@ namespace Monolog {
 
         /**
          * @param array<\Monolog\ProcessorCallback|\Monolog\Processor\ProcessorInterface> $processors
+         * @param \Psr\Clock\ClockInterface|null $clock
          */
-        // @overlay-against: function __construct(string $name, array $handlers, array $processors, \DateTimeZone|null $timezone): void
-        public function __construct(string $name, array<int, \Monolog\Handler\HandlerInterface> $handlers = [], array<\Monolog\ProcessorCallback|\Monolog\Processor\ProcessorInterface> $processors = [], \DateTimeZone|null $timezone = null): void;
+        // @overlay-against: function __construct(string $name, array $handlers, array $processors, \DateTimeZone|null $timezone, \Psr\Clock\ClockInterface|null $clock): void
+        public function __construct(string $name, array<int, \Monolog\Handler\HandlerInterface> $handlers = [], array<\Monolog\ProcessorCallback|\Monolog\Processor\ProcessorInterface> $processors = [], \DateTimeZone|null $timezone = null, \Psr\Clock\ClockInterface|null $clock = null): void;
 
         // @overlay-against: function pushProcessor(\Monolog\Processor\ProcessorInterface|callable $callback): self
         public function pushProcessor(\Monolog\Processor\ProcessorInterface|\Monolog\ProcessorCallback $callback): self;
@@ -242,7 +250,7 @@ namespace Monolog {
     }
 
     /**
-     * Overlay: `DEFAULT_JSON_FLAGS` is an int bitmask; `getClass()` is a class-string helper.
+     * Overlay: `DEFAULT_JSON_FLAGS` is an int bitmask; class-string helpers for 3.12 Utils.
      */
     // @overlay-against: class Utils
     partial class Utils {
@@ -251,6 +259,18 @@ namespace Monolog {
 
         // @overlay-against: function getClass(object $object): string
         public static function getClass<T extends object>(T $object): \__ClassName;
+
+        /**
+         * @param \__ClassName<T> $class
+         */
+        // @overlay-against: function getClassName(string $class): string
+        public static function getClassName<T extends object>(\__ClassName<T> $class): \__ClassName;
+
+        /**
+         * @param \__ClassName<T> $class
+         */
+        // @overlay-against: function getSensitiveParameterNames(string $class): array
+        public static function getSensitiveParameterNames<T extends object>(\__ClassName<T> $class): array<string, true>;
     }
 }
 

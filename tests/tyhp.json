@@ -9,7 +9,8 @@
         "./test_monolog_monolog.tyhp",
         "../composer.json",
         "../../../php/composer.json",
-        "../../../psr-log/3.0.2/composer.json"
+        "../../../psr-log/3.0.2/composer.json",
+        "../../../psr-clock/1.0.0/composer.json"
     ],
     "exclude": [
         "./fail/**"

@@ -48,6 +48,25 @@ namespace Monolog {
         */
         public function registerFatalHandler(mixed $level = null, int $reservedMemorySize = 20): self;
         /**
+        * Attaches an ErrorException carrying the stack trace of the error to the log record's context
+        *
+        * PHP does not report where a warning/notice/deprecation came from, so without this the records
+        * only point at the line which raised the error, and not at its caller. Formatters rendering
+        * stack traces (e.g. LineFormatter::includeStacktraces) then show the full call site.
+        * 
+        * This is off by default because context.exception makes errors look like exceptions to the
+        * handlers which treat that key specially, e.g. NewRelicHandler reports them via
+        * newrelic_notice_error and RollbarHandler as exception occurrences, and because formatters
+        * extending NormalizerFormatter then include the whole trace in every record. Narrowing
+        * $errorTypes is wise if you log a lot of errors: E_DEPRECATED in particular can be very
+        * frequent in legacy code while rarely being worth a stack trace.
+        *
+        * @param int $errorTypes bitmask of E_* constants to capture stack traces for
+        * @return self
+        * @generated
+        */
+        public function captureStackTraces(bool $capture = true, int $errorTypes): self;
+        /**
         * @return array array<class-string, LogLevel::*>
         * @generated
         */
@@ -285,15 +304,22 @@ namespace Monolog {
         protected array<callable|\Monolog\Processor\ProcessorInterface> $processors;
         protected bool $microsecondTimestamps ?? true;
         protected \DateTimeZone $timezone;
+        /**
+        * Clock used to timestamp new records, or null to read the current time from the engine
+        *
+        * @generated
+        */
+        protected \Psr\Clock\ClockInterface|null $clock ?? null;
         protected \Closure|null $exceptionHandler ?? null;
         /**
         * @param string $name The logging channel, a simple descriptive name that is attached to all log records
         * @param array<int, \Monolog\Handler\HandlerInterface> $handlers Optional stack of handlers, the first one in the array is called first, etc.
         * @param array<callable|\Monolog\Processor\ProcessorInterface> $processors Optional array of processors
         * @param \DateTimeZone|null $timezone Optional timezone, if not provided date_default_timezone_get() will be used
+        * @param \Psr\Clock\ClockInterface|null $clock Optional clock to read the current time from, if not provided the engine's current time is used
         * @generated
         */
-        public function __construct(string $name, array<int, \Monolog\Handler\HandlerInterface> $handlers = [], array<callable|\Monolog\Processor\ProcessorInterface> $processors = [], \DateTimeZone|null $timezone = null): void;
+        public function __construct(string $name, array<int, \Monolog\Handler\HandlerInterface> $handlers = [], array<callable|\Monolog\Processor\ProcessorInterface> $processors = [], \DateTimeZone|null $timezone = null, \Psr\Clock\ClockInterface|null $clock = null): void;
         public function getName(): string;
         /**
         * Return a new cloned instance with the name changed
@@ -546,6 +572,22 @@ namespace Monolog {
         */
         public function getTimezone(): \DateTimeZone;
         /**
+        * Sets the clock to read the current time from when timestamping log records.
+        *
+        * Pass null to go back to reading the engine's current time. The timezone
+        * configured on the logger still decides how the timestamp is rendered.
+        *
+        * @return self
+        * @generated
+        */
+        public function setClock(\Psr\Clock\ClockInterface|null $clock): self;
+        /**
+        * Returns the clock used to timestamp log records, or null if the engine's current time is used.
+        *
+        * @generated
+        */
+        public function getClock(): \Psr\Clock\ClockInterface|null;
+        /**
         * Delegates exception management to the custom exception handler,
         *
         * or throws the exception if no custom handler is set.
@@ -708,6 +750,39 @@ namespace Monolog {
     final class Utils {
         public const mixed DEFAULT_JSON_FLAGS;
         public static function getClass(object $object): string;
+        /**
+        * Strips the declaration site PHP appends to anonymous class names after a NUL byte
+        *
+        * Takes the name rather than the object because stack trace frames only carry the string.
+        *
+        * @param string $class
+        * @generated
+        */
+        public static function getClassName(string $class): string;
+        /**
+        * Returns the names of the constructor parameters of a class which are marked #[SensitiveParameter]
+        *
+        * The attribute can only target parameters, and PHP does not copy it over to the promoted
+        * property, so the constructor signature is the only place it can be found. Non-promoted
+        * parameters are included too, to be matched by name against the object's properties, as
+        * assigning a sensitive parameter to a same-named property is just as common.
+        * 
+        * Results are cached per class as the reflection cost is otherwise prohibitive.
+        *
+        * @param string $class
+        * @return array<string, true> Set of parameter names, to be used with isset()
+        * @generated
+        */
+        public static function getSensitiveParameterNames(string $class): array<string, true>;
+        /**
+        * Resolves a chain of formatter decorators down to the formatter doing the actual work
+        *
+        * Useful for handlers which only accept one specific formatter, to let them accept it
+        * wrapped in a decorator like the RedactingFormatter.
+        *
+        * @generated
+        */
+        public static function unwrapFormatter(\Monolog\Formatter\FormatterInterface $formatter): \Monolog\Formatter\FormatterInterface;
         public static function substr(string $string, int $start, ?int $length = null): string;
         /**
         * Makes sure if a relative path is passed in it is turned into an absolute path
@@ -780,8 +855,10 @@ namespace Monolog\Attribute {
         public function __construct(?string $channel = null, ?string $handler = null, ?string $method = null, ?int $priority = null): void;
     }
     /**
-    * A reusable attribute to help configure a class as expecting a given logger channel.
+    * A reusable attribute to help configure a class, or one of its constructor/method arguments,
     *
+    * as expecting a given logger channel.
+    * 
     * Using it offers no guarantee: it needs to be leveraged by a Monolog third-party consumer.
     * 
     * Using it with the Monolog library only has no effect at all: wiring the logger instance into
@@ -1417,6 +1494,7 @@ namespace Monolog\Formatter {
         protected string $dateFormat;
         protected int $maxNormalizeDepth ?? 9;
         protected int $maxNormalizeItemCount ?? 1000;
+        protected ?int $maxTraceLength ?? null;
         protected string $basePath ?? '';
         /**
         * @param ?string $dateFormat The format of the timestamp: one supported by DateTime::format
@@ -1468,6 +1546,17 @@ namespace Monolog\Formatter {
         * @generated
         */
         public function setMaxNormalizeItemCount(int $maxNormalizeItemCount): self;
+        /**
+        * The maximum number of stack trace frames to include
+        *
+        * @generated
+        */
+        public function getMaxTraceLength(): ?int;
+        /**
+        * @return self
+        * @generated
+        */
+        public function setMaxTraceLength(?int $maxTraceLength): self;
         /**
         * Enables `json_encode` pretty print.
         *
@@ -1522,6 +1611,67 @@ namespace Monolog\Formatter {
         * @generated
         */
         public function removeJsonEncodeOption(int $option): self;
+    }
+    /**
+    * Wraps another formatter to redact sensitive data from log records.
+    *
+    * It works in three passes so that it can mask secrets wherever they end up:
+    * 
+    *  - Before delegating, it masks the value of any context/extra key whose name
+    *    matches one of the configured sensitive keys (case-insensitive, recursive).
+    *  - After delegating, it removes those same secret values from the wrapped
+    *    formatter's output, which catches the copies masking the record cannot
+    *    reach, e.g. a secret interpolated into the message by the
+    *    PsrLogMessageProcessor or embedded in an exception message.
+    *  - Last, it runs the configured regex patterns over the output, which catches
+    *    secrets that only became strings once the inner formatter normalized
+    *    objects (e.g. tokens buried in an exception stack trace). If a pattern
+    *    cannot be applied, the record is dropped instead of emitted unredacted.
+    * 
+    * On top of the sensitive keys, secrets are also read from the properties of the
+    * objects in the record matching a constructor parameter marked
+    * #[SensitiveParameter]. Those can only be handled by the output pass, as the
+    * objects carrying them cannot be modified. This is the one part that reflects on
+    * every logged object, so it can be turned off with $redactSensitiveParameters.
+    * 
+    * Only string and array output can be swept, so wrapping a formatter which returns
+    * objects (e.g. the ElasticaFormatter) leaves you with the key masking alone.
+    * 
+    * Because it is a formatter rather than a processor, it is guaranteed to run
+    * after every processor (both Logger- and Handler-level), so it always sees the
+    * final record with all data at hand.
+    *
+    * @author Jordi Boggiano <j.boggiano@seld.be>
+    * @generated
+    */
+    final class RedactingFormatter implements \Monolog\Formatter\WrappingFormatterInterface {
+        /**
+        * Matches long token-like words (30+ alphanumerics, optionally prefixed like api_key_),
+        *
+        * which are very likely to be secrets/tokens. Provided as an opt-in pattern as it may
+        * cause collateral damage on legitimate long strings (hashes, UUIDs, base64, ...).
+        *
+        * @generated
+        */
+        public const string TOKEN_PATTERN ?? '{\b(?:[a-z]+_)*[a-zA-Z0-9]{30,}\b}';
+        /**
+        * @param \Monolog\Formatter\FormatterInterface $formatter The formatter to wrap and whose output gets redacted
+        * @param array<int, string> $sensitiveKeys Exact context/extra keys whose values to mask (case-insensitive)
+        * @param array<int, string> $patterns PCRE patterns to mask in the formatted output (e.g. self::TOKEN_PATTERN)
+        * @param string $mask Replacement token
+        * @param bool $redactSensitiveParameters Whether to also read secrets off the properties matching a
+        *  *                                                          #[SensitiveParameter] constructor parameter, which requires
+        *  *                                                          walking and reflecting on every object in the record
+        * @param int $minSecretLength Minimum length a secret must have to be removed from the
+        *  *                                                          output, to avoid short values like "pass" redacting
+        *  *                                                          unrelated data
+        * @throws \InvalidArgumentException If a pattern is not a valid PCRE regex
+        * @generated
+        */
+        public function __construct(\Monolog\Formatter\FormatterInterface $formatter, array<int, string> $sensitiveKeys = [], array<int, string> $patterns = [], string $mask = '[REDACTED]', bool $redactSensitiveParameters = true, int $minSecretLength = 5): void;
+        public function getWrappedFormatter(): \Monolog\Formatter\FormatterInterface;
+        public function format(\Monolog\LogRecord $record): mixed;
+        public function formatBatch(array $records): mixed;
     }
     /**
     * Formats data into an associative array of scalar (+ null) values.
@@ -1580,6 +1730,23 @@ namespace Monolog\Formatter {
         * @generated
         */
         protected function normalize(mixed $data, int $depth = 0): null|scalar|array<array<int, mixed>|scalar|null>|object;
+    }
+    /**
+    * Interface for formatters decorating another formatter
+    *
+    * Handlers which only accept one specific formatter can use Utils::unwrapFormatter()
+    * to see through the decoration and accept a wrapped instance of that formatter.
+    *
+    * @author Jordi Boggiano <j.boggiano@seld.be>
+    * @generated
+    */
+    interface WrappingFormatterInterface extends \Monolog\Formatter\FormatterInterface {
+        /**
+        * Returns the formatter this one delegates the actual formatting to
+        *
+        * @generated
+        */
+        public function getWrappedFormatter(): \Monolog\Formatter\FormatterInterface;
     }
 }
 namespace Monolog\Handler {
@@ -1851,7 +2018,7 @@ namespace Monolog\Handler {
         */
         public function handle(\Monolog\LogRecord $record): bool;
         public function flush(): void;
-        public function __destruct(): mixed;
+        public function __destruct(): void;
         /**
         * @inheritdoc
         * @generated
@@ -2776,6 +2943,53 @@ namespace Monolog\Handler {
         protected function getDefaultFormatter(): \Monolog\Formatter\FormatterInterface;
     }
     /**
+    * Logs records using FrankenPHP's frankenphp_log() function.
+    *
+    * This handler requires a NormalizerFormatter to function and expects an array in $record->formatted
+    *
+    * @see https://frankenphp.dev/docs/logging/#frankenphp_log
+    * @author Kévin Dunglas <kevin@dunglas.dev>
+    * @generated
+    */
+    class FrankenPhpHandler extends \Monolog\Handler\AbstractProcessingHandler {
+        /**
+        * @throws MissingExtensionException If frankenphp_log() is not available
+        * @generated
+        */
+        public function __construct(int|string|\Monolog\Level $level = \Monolog\Level::Debug, bool $bubble = true): void;
+        /**
+        * Translates Monolog log levels to FrankenPHP's slog-based levels.
+        *
+        * slog's docs state its gap of 4 between named levels matches OpenTelemetry's SeverityNumber
+        * mapping, converted by subtracting 9. Applying that same subtraction to OpenTelemetry's own
+        * Syslog severity mapping for the 4 extra RFC 5424 levels slog has no constant for keeps this
+        * scale traceable to that spec instead of an arbitrary choice.
+        * 
+        * FrankenPHP feeds these through zapslog, which buckets everything >= Error into "error", so
+        * above Error only the level_name context key tells the Monolog levels apart.
+        *
+        * @see https://pkg.go.dev/log/slog#hdr-Levels
+        * @see https://opentelemetry.io/docs/specs/otel/logs/data-model-appendix/
+        * @generated
+        */
+        protected function toFrankenPhpLevel(\Monolog\Level $level): int;
+        /**
+        * @inheritdoc
+        * @generated
+        */
+        protected function write(\Monolog\LogRecord $record): void;
+        /**
+        * @param array<mixed> $context Displayed as structured attributes alongside the message
+        * @generated
+        */
+        protected function writeFrankenPhpLog(string $message, int $level, array<mixed> $context): void;
+        /**
+        * @inheritdoc
+        * @generated
+        */
+        public function getDefaultFormatter(): \Monolog\Formatter\FormatterInterface;
+    }
+    /**
     * Handler to send messages to a Graylog2 (http://www.graylog2.org) server
     *
     * @author Matt Lehner <mlehner@gmail.com>
@@ -2865,7 +3079,7 @@ namespace Monolog\Handler {
         * @generated
         */
         public function close(): void;
-        public function __destruct(): mixed;
+        public function __destruct(): void;
         public function __serialize(): array;
     }
     /**
@@ -3141,6 +3355,97 @@ namespace Monolog\Handler {
         * @generated
         */
         protected function getDefaultFormatter(): \Monolog\Formatter\FormatterInterface;
+    }
+    /**
+    * Watches log records go by and expects to be fed at least $hunger of them before
+    *
+    * the process ends. If it stays hungry until close() (and was not manually fed()),
+    * the monster gets angry and emits a complaint record at $angerLevel to the nested
+    * handler. Useful as a dead-man's switch for cron jobs / workers that should produce
+    * a known amount of log activity before they finish, or to make sure that every code
+    * path / request in the application at least logs some amount of records.
+    * 
+    * Records carrying context are "cookies with chocolate chips" — when $wantsContextChips
+    * is true, only records with non-empty context count toward feeding the monster.
+    * 
+    * Thanks to Jonathan Wage for the idea https://x.com/seldaek/status/1491110384023277569
+    *
+    * @author Jordi Boggiano <j.boggiano@seld.be>
+    * @generated
+    */
+    class LogMonsterHandler extends \Monolog\Handler\Handler implements \Monolog\Handler\ProcessableHandlerInterface, \Monolog\ResettableInterface, \Monolog\Handler\FormattableHandlerInterface {
+        use \Monolog\Handler\ProcessableHandlerTrait;
+        /**
+        * Handler or factory Closure($record, $this)
+        *
+        * @generated
+        */
+        protected \Closure|\Monolog\Handler\HandlerInterface $handler;
+        protected int $hunger;
+        protected \Monolog\Level $angerLevel;
+        protected string $channel;
+        protected bool $wantsContextChips;
+        /**
+        * Number of records the monster has eaten so far
+        *
+        * @generated
+        */
+        protected int $eaten ?? 0;
+        /**
+        * Whether the monster has been manually fed and should stay quiet on close
+        *
+        * @generated
+        */
+        protected bool $fed ?? false;
+        /**
+        * @param \Closure|\Monolog\Handler\HandlerInterface $handler Handler or factory Closure($record|null, $logMonsterHandler).
+        * @param int $hunger Number of log records the monster must eat before close() to stay satisfied.
+        * @param int|string|Level|LogLevel:: $ * $angerLevel        Level at which the monster logs its complaint when it goes hungry.
+        * @param string $channel Channel name stamped on the synthetic complaint record, note the record only gets sent to the given $handler, and will for example not go to the handlers configured for $channel in Symfony.
+        * @param bool $wantsContextChips If true, only records carrying context count toward feeding the monster.
+        * @generated
+        */
+        public function __construct(\Closure|\Monolog\Handler\HandlerInterface $handler, int $hunger, int|string|\Monolog\Level $angerLevel = \Monolog\Level::Error, string $channel = 'log-monster', bool $wantsContextChips = false): void;
+        /**
+        * @inheritdoc
+        * @generated
+        */
+        public function isHandling(\Monolog\LogRecord $record): bool;
+        /**
+        * Manually feed the log monster so it does not complain on close (until reset() is called)
+        *
+        * @generated
+        */
+        public function feed(): void;
+        /**
+        * @inheritdoc
+        * @generated
+        */
+        public function handle(\Monolog\LogRecord $record): bool;
+        /**
+        * @inheritdoc
+        * @generated
+        */
+        public function close(): void;
+        public function reset(): void;
+        /**
+        * Return the nested handler
+        *
+        * If the handler was provided as a factory, this will trigger the handler's instantiation.
+        *
+        * @generated
+        */
+        public function getHandler(?\Monolog\LogRecord $record = null): \Monolog\Handler\HandlerInterface;
+        /**
+        * @inheritdoc
+        * @generated
+        */
+        public function setFormatter(\Monolog\Formatter\FormatterInterface $formatter): \Monolog\Handler\HandlerInterface;
+        /**
+        * @inheritdoc
+        * @generated
+        */
+        public function getFormatter(): \Monolog\Formatter\FormatterInterface;
     }
     /**
     * Base class for all mail handlers
@@ -3931,6 +4236,7 @@ namespace Monolog\Handler {
     * @generated
     */
     class RotatingFileHandler extends \Monolog\Handler\StreamHandler {
+        public const string FILE_PER_HOUR ?? 'Y-m-d-H';
         public const string FILE_PER_DAY ?? 'Y-m-d';
         public const string FILE_PER_MONTH ?? 'Y-m';
         public const string FILE_PER_YEAR ?? 'Y';
@@ -3975,6 +4281,19 @@ namespace Monolog\Handler {
         */
         protected function rotate(): void;
         protected function getTimedFilename(): string;
+        /**
+        * Finds the log files that previous rotations left behind.
+        *
+        * glob() cannot see through stream wrappers (Drupal's private:// for one),
+        * so the pattern is translated to a regex and matched against a directory
+        * walk instead. It still comes from getGlobPattern(), so overriding that
+        * keeps changing which files the cleanup considers. Unlike glob(), symlinked
+        * directories are not followed, which also rules out symlink loops.
+        *
+        * @return array<int, string>
+        * @generated
+        */
+        protected function findRotatedFiles(): array<int, string>;
         protected function getGlobPattern(): string;
         protected function setDateFormat(string $dateFormat): void;
         protected function getNextRotation(): \DateTimeImmutable;
@@ -4555,10 +4874,15 @@ namespace Monolog\Handler {
         * @param bool $bubble Whether the messages that are handled can bubble up the stack or not
         * @param string $ident Program name or tag for each log message.
         * @param int $rfc RFC to format the message for.
+        * @param ?int $maxLength Maximum size in bytes of a single UDP datagram. Defaults to the
+        *  *                                                  largest a UDP payload can theoretically be, which risks getting
+        *  *                                                  silently truncated or dropped by routers/firewalls that reject
+        *  *                                                  fragmented UDP packets; pass a value that fits within the path
+        *  *                                                  MTU (eg. 1024) to avoid that.
         * @throws MissingExtensionException when there is no socket extension
         * @generated
         */
-        public function __construct(string $host, int $port = 514, string|int $facility, int|string|\Monolog\Level $level = \Monolog\Level::Debug, bool $bubble = true, string $ident = 'php', int $rfc = self::RFC5424): void;
+        public function __construct(string $host, int $port = 514, string|int $facility, int|string|\Monolog\Level $level = \Monolog\Level::Debug, bool $bubble = true, string $ident = 'php', int $rfc = self::RFC5424, ?int $maxLength = null): void;
         protected function write(\Monolog\LogRecord $record): void;
         public function close(): void;
         /**
@@ -4656,7 +4980,30 @@ namespace Monolog\Handler {
         * @generated
         */
         protected function send(string $message): void;
+        /**
+        * Returns the Telegram Bot API base URL.
+        *
+        * Override in a subclass to point to a self-hosted Bot API server.
+        *
+        * @generated
+        */
+        protected function getBotApiUrl(): string;
+        /**
+        * Returns extra HTTP headers to send with every Telegram API request.
+        *
+        * Override in a subclass to inject custom headers (e.g. auth tokens, tracing).
+        *
+        * @return array<int, string>
+        * @generated
+        */
+        protected function getCurlHeaders(): array<int, string>;
         protected function sendCurl(string $message): void;
+        /**
+        * @param string|bool $rawResult Raw response body from the Telegram API call
+        * @throws RuntimeException When the response is missing, non-JSON, or signals failure
+        * @generated
+        */
+        protected function validateApiResponse(string|bool $rawResult): void;
     }
     /**
     * Used for testing purposes.
@@ -5024,8 +5371,18 @@ namespace Monolog\Handler\SyslogUdp {
         protected const int DATAGRAM_MAX_LENGTH ?? 65023;
         protected string $ip;
         protected int $port;
+        protected int $maxLength;
         protected ?\Socket $socket ?? null;
-        public function __construct(string $ip, int $port = 514): void;
+        /**
+        * @param ?int $maxLength Maximum size in bytes of a single UDP datagram sent to $ip:$port.
+        *  *                            Defaults to the largest a UDP payload can theoretically be, but
+        *  *                            messages that size get fragmented at the IP level, and many routers
+        *  *                            and firewalls drop fragmented UDP packets, which silently truncates
+        *  *                            or loses the log entry on the receiving end. Passing a value that
+        *  *                            fits within the path MTU (eg. 1024) avoids that.
+        * @generated
+        */
+        public function __construct(string $ip, int $port = 514, ?int $maxLength = null): void;
         public function write(string $line, string $header = ""): void;
         public function close(): void;
         protected function getSocket(): \Socket;
@@ -5356,5 +5713,35 @@ namespace Monolog\Processor {
         * @generated
         */
         public function addExtraField(string $extraName, string $serverName): self;
+    }
+}
+namespace Monolog\Test {
+    /**
+    * Lets you easily generate log records and a dummy formatter for testing purposes
+    *
+    * @author Jordi Boggiano <j.boggiano@seld.be>
+    * @generated
+    */
+    class MonologTestCase extends \PHPUnit\Framework\TestCase {
+        /**
+        * @param array<mixed> $context
+        * @param array<mixed> $extra
+        * @generated
+        */
+        protected function getRecord(int|string|\Monolog\Level $level = \Monolog\Level::Warning, string|\Stringable $message = 'test', array<mixed> $context = [], string $channel = 'test', \DateTimeImmutable $datetime, array<mixed> $extra = []): \Monolog\LogRecord;
+        /**
+        * @generated
+        */
+        protected function getMultipleRecords(): array<int, \Monolog\LogRecord>;
+        protected function getIdentityFormatter(): \Monolog\Formatter\FormatterInterface;
+    }
+    /**
+    * Lets you easily generate log records and a dummy formatter for testing purposes
+    *
+    * @author Jordi Boggiano <j.boggiano@seld.be>
+    * @deprecated use MonologTestCase instead.
+    * @generated
+    */
+    deprecated class TestCase extends \Monolog\Test\MonologTestCase {
     }
 }

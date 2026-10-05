@@ -8,7 +8,7 @@
     ],
     "type": "library",
     "license": "Apache-2.0",
-    "version": "3.10.0.0",
+    "version": "3.12.0.0",
     "minimum-stability": "dev",
     "prefer-stable": true,
     "extra": {
@@ -34,10 +34,11 @@
     },
     "require": {
         "php": ">=8.2",
-        "monolog/monolog": "3.10.0"
+        "monolog/monolog": "3.12.0"
     },
     "require-dev": {
         "tyhpdef/php": "@dev",
-        "tyhpdef/psr-log": "@dev"
+        "tyhpdef/psr-log": "@dev",
+        "tyhpdef/psr-clock": "@dev"
     }
 }

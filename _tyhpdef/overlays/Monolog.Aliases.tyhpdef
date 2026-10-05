@@ -42,7 +42,7 @@ namespace Monolog {
     type ExceptionHandlerCallback = callable(\Throwable, \Monolog\LogRecord): void;
 
     /**
-     * Nested-handler factory used by Filter / FingersCrossed / Sampling (and similar).
+     * Nested-handler factory used by Filter / FingersCrossed / Sampling / LogMonster.
      */
     type HandlerFactoryCallback = callable(?\Monolog\LogRecord, \Monolog\Handler\HandlerInterface): \Monolog\Handler\HandlerInterface;
 
